@@ -1,10 +1,6 @@
 #include "kernel.h"
 #include "common.h"
 
-typedef unsigned char uint8_t;
-typedef unsigned int uint32_t;
-typedef uint32_t size_t;
-
 extern char __free_ram[], __free_ram_end[];
 extern char __bss[], __bss_end[], __stack_top[];
 
@@ -19,7 +15,6 @@ paddr_t alloc_pages(uint32_t n) {
     memset((void *) paddr, 0, n * PAGE_SIZE);
     return paddr;
 }
-
 
 struct sbiret sbi_call(long arg0, long arg1, long arg2, long arg3, long arg4,
                        long arg5, long fid, long eid) {
