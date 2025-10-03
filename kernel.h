@@ -1,5 +1,12 @@
 #pragma once
 
+#define SATP_SV32 (1u << 31) // SV32モード
+#define PAGE_V    (1 << 0)   // 有効化ビット
+#define PAGE_R    (1 << 1)   // 読み込み可能
+#define PAGE_W    (1 << 2)   // 書き込み可能
+#define PAGE_X    (1 << 3)   // 実行可能
+#define PAGE_U    (1 << 4)   // ユーザーモードでアクセス可能
+
 struct sbiret {
     long error;
     long value;
@@ -69,5 +76,6 @@ struct process {
     int pid;             // プロセスID
     int state;           // プロセスの状態: PROC_UNUSED または PROC_RUNNABLE
     vaddr_t sp;          // コンテキストスイッチ時のスタックポインタ
+    uint32_t *page_table; // ページテーブルの物理アドレス
     uint8_t stack[8192]; // カーネルスタック
 };
