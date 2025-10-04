@@ -1,29 +1,60 @@
 #pragma once
+#include "common.h"
 
-#define SATP_SV32 (1u << 31) // SV32モード
-#define PAGE_V    (1 << 0)   // 有効化ビット
-#define PAGE_R    (1 << 1)   // 読み込み可能
-#define PAGE_W    (1 << 2)   // 書き込み可能
-#define PAGE_X    (1 << 3)   // 実行可能
-#define PAGE_U    (1 << 4)   // ユーザーモードでアクセス可能
+#define PROCS_MAX 8
+#define PROC_UNUSED   0
+#define PROC_RUNNABLE 1
+#define PROC_EXITED   2
+#define SATP_SV32 (1u << 31)
 #define SSTATUS_SPIE (1 << 5)
 #define SSTATUS_SUM  (1 << 18)
-#define USER_BASE 0x1000000
 #define SCAUSE_ECALL 8
+#define PAGE_V    (1 << 0)
+#define PAGE_R    (1 << 1)
+#define PAGE_W    (1 << 2)
+#define PAGE_X    (1 << 3)
+#define PAGE_U    (1 << 4)
+#define USER_BASE 0x1000000
+#define FILES_MAX   2
+#define DISK_MAX_SIZE     align_up(sizeof(struct file) * FILES_MAX, SECTOR_SIZE)
+#define SECTOR_SIZE       512
+#define VIRTQ_ENTRY_NUM   16
+#define VIRTIO_DEVICE_BLK 2
+#define VIRTIO_BLK_PADDR  0x10001000
+#define VIRTIO_REG_MAGIC         0x00
+#define VIRTIO_REG_VERSION       0x04
+#define VIRTIO_REG_DEVICE_ID     0x08
+#define VIRTIO_REG_QUEUE_SEL     0x30
+#define VIRTIO_REG_QUEUE_NUM_MAX 0x34
+#define VIRTIO_REG_QUEUE_NUM     0x38
+#define VIRTIO_REG_QUEUE_ALIGN   0x3c
+#define VIRTIO_REG_QUEUE_PFN     0x40
+#define VIRTIO_REG_QUEUE_NOTIFY  0x50
+#define VIRTIO_REG_DEVICE_STATUS 0x70
+#define VIRTIO_REG_DEVICE_CONFIG 0x100
+#define VIRTIO_STATUS_ACK       1
+#define VIRTIO_STATUS_DRIVER    2
+#define VIRTIO_STATUS_DRIVER_OK 4
+#define VIRTIO_STATUS_FEAT_OK   8
+#define VIRTQ_DESC_F_NEXT          1
+#define VIRTQ_DESC_F_WRITE         2
+#define VIRTQ_AVAIL_F_NO_INTERRUPT 1
+#define VIRTIO_BLK_T_IN  0
+#define VIRTIO_BLK_T_OUT 1
+
+struct process {
+    int pid; // 0 if it's an idle process
+    int state; // PROC_UNUSED, PROC_RUNNABLE, PROC_EXITED
+    vaddr_t sp; // kernel stack pointer
+    uint32_t *page_table; // points to first level page table
+    uint8_t stack[8192]; // kernel stack
+};
 
 struct sbiret {
     long error;
     long value;
 };
 
-#define PANIC(fmt, ...)                                                        \
-    do {                                                                       \
-        printf("PANIC: %s:%d: " fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__);  \
-        while (1) {}                                                           \
-    } while (0)
-
-
-#include "common.h"
 struct trap_frame {
     uint32_t ra;
     uint32_t gp;
@@ -57,58 +88,6 @@ struct trap_frame {
     uint32_t s11;
     uint32_t sp;
 } __attribute__((packed));
-
-#define READ_CSR(reg)                                                          \
-    ({                                                                         \
-        unsigned long __tmp;                                                   \
-        __asm__ __volatile__("csrr %0, " #reg : "=r"(__tmp));                  \
-        __tmp;                                                                 \
-    })
-
-#define WRITE_CSR(reg, value)                                                  \
-    do {                                                                       \
-        uint32_t __tmp = (value);                                              \
-        __asm__ __volatile__("csrw " #reg ", %0" ::"r"(__tmp));                \
-    } while (0)
-
-#define PROCS_MAX 8       // 最大プロセス数
-
-#define PROC_UNUSED   0   // 未使用のプロセス管理構造体
-#define PROC_RUNNABLE 1   // 実行可能なプロセス
-#define PROC_EXITED   2
-
-struct process {
-    int pid;             // プロセスID
-    int state;           // プロセスの状態: PROC_UNUSED または PROC_RUNNABLE
-    vaddr_t sp;          // コンテキストスイッチ時のスタックポインタ
-    uint32_t *page_table; // ページテーブルの物理アドレス
-    uint8_t stack[8192]; // カーネルスタック
-};
-#define SECTOR_SIZE       512
-#define VIRTQ_ENTRY_NUM   16
-#define VIRTIO_DEVICE_BLK 2
-#define VIRTIO_BLK_PADDR  0x10001000
-#define VIRTIO_REG_MAGIC         0x00
-#define VIRTIO_REG_VERSION       0x04
-#define VIRTIO_REG_DEVICE_ID     0x08
-#define VIRTIO_REG_QUEUE_SEL     0x30
-#define VIRTIO_REG_QUEUE_NUM_MAX 0x34
-#define VIRTIO_REG_QUEUE_NUM     0x38
-#define VIRTIO_REG_QUEUE_ALIGN   0x3c
-#define VIRTIO_REG_QUEUE_PFN     0x40
-#define VIRTIO_REG_QUEUE_READY   0x44
-#define VIRTIO_REG_QUEUE_NOTIFY  0x50
-#define VIRTIO_REG_DEVICE_STATUS 0x70
-#define VIRTIO_REG_DEVICE_CONFIG 0x100
-#define VIRTIO_STATUS_ACK       1
-#define VIRTIO_STATUS_DRIVER    2
-#define VIRTIO_STATUS_DRIVER_OK 4
-#define VIRTIO_STATUS_FEAT_OK   8
-#define VIRTQ_DESC_F_NEXT          1
-#define VIRTQ_DESC_F_WRITE         2
-#define VIRTQ_AVAIL_F_NO_INTERRUPT 1
-#define VIRTIO_BLK_T_IN  0
-#define VIRTIO_BLK_T_OUT 1
 
 struct virtq_desc {
     uint64_t addr;
@@ -144,20 +123,12 @@ struct virtio_virtq {
 } __attribute__((packed));
 
 struct virtio_blk_req {
-    // 1つ目のディスクリプタ: デバイスからは読み込み専用
     uint32_t type;
     uint32_t reserved;
     uint64_t sector;
-
-    // 2つ目のディスクリプタ: 読み込み処理の場合は、デバイスから書き込み可 (VIRTQ_DESC_F_WRITE)
     uint8_t data[512];
-
-    // 3つ目のディスクリプタ: デバイスから書き込み可 (VIRTQ_DESC_F_WRITE)
     uint8_t status;
 } __attribute__((packed));
-
-#define FILES_MAX      2
-#define DISK_MAX_SIZE  align_up(sizeof(struct file) * FILES_MAX, SECTOR_SIZE)
 
 struct tar_header {
     char name[100];
@@ -177,12 +148,31 @@ struct tar_header {
     char devminor[8];
     char prefix[155];
     char padding[12];
-    char data[];      // ヘッダに続くデータ領域を指す配列 (フレキシブル配列メンバ)
+    char data[];
 } __attribute__((packed));
 
 struct file {
-    bool in_use;      // このファイルエントリが使われているか
-    char name[100];   // ファイル名
-    char data[1024];  // ファイルの内容
-    size_t size;      // ファイルサイズ
+    bool in_use;
+    char name[100];
+    char data[1024];
+    size_t size;
 };
+
+#define READ_CSR(reg)                                                          \
+    ({                                                                         \
+        unsigned long __tmp;                                                   \
+        __asm__ __volatile__("csrr %0, " #reg : "=r"(__tmp));                  \
+        __tmp;                                                                 \
+    })
+
+#define WRITE_CSR(reg, value)                                                  \
+    do {                                                                       \
+        uint32_t __tmp = (value);                                              \
+        __asm__ __volatile__("csrw " #reg ", %0" ::"r"(__tmp));                \
+    } while (0)
+
+#define PANIC(fmt, ...)                                                        \
+    do {                                                                       \
+        printf("PANIC: %s:%d: " fmt "\n", __FILE__, __LINE__, ##__VA_ARGS__);  \
+        while (1) {}                                                           \
+    } while (0)
