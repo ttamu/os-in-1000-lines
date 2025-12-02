@@ -7,7 +7,7 @@ QEMU=qemu-system-riscv32
 CC=/usr/local/opt/llvm/bin/clang
 
 # コンパイルオプション
-CFLAGS="-std=c11 -O2 -g3 -Wall -Wextra --target=riscv32-unknown-elf -fno-stack-protector -ffreestanding -nostdlib"
+CFLAGS="-std=c11 -O2 -g3 -Wall -Wextra --target=riscv32-unknown-elf -fuse-ld=lld -fno-stack-protector -ffreestanding -nostdlib"
 
 # objcopyのパス
 OBJCOPY=/usr/local/opt/llvm/bin/llvm-objcopy
